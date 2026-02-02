@@ -1,0 +1,1035 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>坐标转换工具</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        /* 全局样式 */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        /* 容器样式 */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+            overflow: hidden;
+            /* 默认高度，避免加载时闪烁 */
+            min-height: 200px;
+        }
+
+        /* --- 验证界面样式 (虽然移除了HTML结构，但为了“别的不动”原则保留样式定义，不影响使用) --- */
+        #auth-layer {
+            max-width: 420px;
+            margin: 10vh auto;
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+
+        #auth-layer h2 { margin-bottom: 25px; color: #333; font-weight: 600; }
+        
+        .auth-input-group { margin-bottom: 20px; }
+        
+        #auth-code {
+            width: 100%;
+            padding: 15px;
+            font-size: 24px;
+            letter-spacing: 12px;
+            text-align: center;
+            border: 2px solid #eee;
+            border-radius: 8px;
+            font-family: 'Monaco', monospace;
+            transition: all 0.3s;
+            outline: none;
+        }
+
+        #auth-code:focus { border-color: #333; box-shadow: 0 0 0 4px rgba(0,0,0,0.05); }
+
+        .btn-verify {
+            width: 100%;
+            padding: 14px;
+            background: #333;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .btn-verify:hover { background: #000; }
+
+        #auth-msg {
+            margin-top: 15px;
+            font-size: 14px;
+            color: #d32f2f;
+            display: none;
+            background: #ffebee;
+            padding: 10px;
+            border-radius: 6px;
+        }
+
+        /* --- 工具内部样式 (保持原有风格) --- */
+        .header { padding: 30px 30px 20px; border-bottom: 1px solid #e5e5e5; }
+        .header h1 { font-size: 24px; font-weight: 600; color: #333; margin-bottom: 5px; }
+        .header p { color: #666; font-size: 14px; }
+        .tabs { display: flex; border-bottom: 1px solid #e5e5e5; background: #fafafa; overflow-x: auto; }
+        .tab { flex: 1; min-width: 120px; padding: 12px; text-align: center; cursor: pointer; border: none; background: none; color: #666; font-size: 14px; transition: all 0.2s; white-space: nowrap; }
+        .tab:hover { background: #f0f0f0; color: #333; }
+        .tab.active { background: white; color: #333; font-weight: 500; border-bottom: 2px solid #333; }
+        .content { padding: 30px; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .section { margin-bottom: 25px; }
+        .section-title { font-size: 14px; font-weight: 500; color: #333; margin-bottom: 10px; }
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px; }
+        .form-row.triple { grid-template-columns: 1fr 1fr 1fr; }
+        .form-row.quad { grid-template-columns: 1fr 1fr 1fr 1fr; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; font-size: 13px; color: #666; margin-bottom: 6px; }
+        input[type="number"], input[type="text"], select, textarea { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; transition: border-color 0.2s; font-family: inherit; }
+        input:focus, select:focus, textarea:focus { outline: none; border-color: #333; }
+        textarea { min-height: 150px; font-family: 'Monaco', 'Courier New', monospace; font-size: 13px; resize: vertical; }
+        button.action-btn { padding: 10px 20px; background: #333; color: white; border: none; border-radius: 4px; font-size: 14px; cursor: pointer; transition: background 0.2s; margin-right: 8px; margin-bottom: 8px; }
+        button.action-btn:hover { background: #000; }
+        button.secondary { background: white; color: #333; border: 1px solid #ddd; }
+        button.secondary:hover { background: #f5f5f5; border-color: #333; }
+        .result { margin-top: 20px; padding: 15px; background: #fafafa; border-radius: 4px; border-left: 3px solid #333; }
+        .result-item { padding: 8px 0; border-bottom: 1px solid #e5e5e5; font-size: 13px; }
+        .result-item:last-child { border-bottom: none; }
+        .result-label { color: #666; display: inline-block; min-width: 80px; }
+        .result-value { color: #333; font-family: 'Monaco', 'Courier New', monospace; }
+        .hint { font-size: 12px; color: #999; margin-top: 5px; }
+        .status { padding: 10px 12px; border-radius: 4px; margin-bottom: 15px; font-size: 13px; }
+        .status-success { background: #e8f5e9; color: #2e7d32; }
+        .status-error { background: #ffebee; color: #c62828; }
+        .status-warning { background: #fff3e0; color: #ef6c00; }
+        .example { background: #f9f9f9; padding: 12px; border-radius: 4px; margin: 10px 0; border: 1px solid #e5e5e5; }
+        .example pre { font-size: 12px; color: #333; font-family: 'Monaco', 'Courier New', monospace; white-space: pre-wrap; word-wrap: break-word; }
+        #map { height: 500px; width: 100%; border-radius: 4px; margin-top: 15px; position: relative; }
+        .map-controls { margin-top: 15px; padding: 15px; background: #fafafa; border-radius: 4px; }
+        .marker-list { max-height: 300px; overflow-y: auto; margin-top: 10px; }
+        .marker-item { padding: 10px; background: white; margin-bottom: 8px; border-radius: 4px; border: 1px solid #e5e5e5; display: flex; justify-content: space-between; align-items: center; }
+        .marker-item:hover { border-color: #333; }
+        .footer { padding: 20px 30px; border-top: 1px solid #e5e5e5; background: #fafafa; text-align: center; }
+        .footer-content { color: #666; font-size: 13px; }
+        .settings-panel { background: #fafafa; padding: 15px; border-radius: 4px; margin-bottom: 20px; }
+        
+        @media (max-width: 768px) {
+            .form-row, .form-row.triple, .form-row.quad { grid-template-columns: 1fr; }
+            .content, .header { padding: 20px; }
+            #map { height: 350px; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 1. 验证层已移除 -->
+
+    <!-- 2. 工具容器：直接展示内容 -->
+    <div id="app-root" class="container">
+        <div class="header">
+            <h1>坐标转换工具</h1>
+            <p>支持多种坐标系统 · 批量转换 · 地图可视化 · 数据导出</p>
+        </div>
+
+        <div class="tabs">
+            <button class="tab active" onclick="showTab('dms')">度分秒⇄十进制</button>
+            <button class="tab" onclick="showTab('xy')">XY⇄经纬度</button>
+            <button class="tab" onclick="showTab('batch')">批量转换</button>
+            <button class="tab" onclick="showTab('map')">地图可视化</button>
+            <button class="tab" onclick="showTab('settings')">设置</button>
+        </div>
+
+        <div class="content">
+            <!-- 度分秒和十进制互转 -->
+            <div id="dms" class="tab-content active">
+                <div class="section">
+                    <div class="section-title">度分秒 → 十进制</div>
+                    <div class="form-row">
+                        <div>
+                            <label>经度</label>
+                            <div class="form-row triple">
+                                <input type="number" id="lonDeg" placeholder="度">
+                                <input type="number" id="lonMin" placeholder="分">
+                                <input type="number" id="lonSec" step="0.01" placeholder="秒">
+                            </div>
+                        </div>
+                        <div>
+                            <label>纬度</label>
+                            <div class="form-row triple">
+                                <input type="number" id="latDeg" placeholder="度">
+                                <input type="number" id="latMin" placeholder="分">
+                                <input type="number" id="latSec" step="0.01" placeholder="秒">
+                            </div>
+                        </div>
+                    </div>
+                    <button class="action-btn" onclick="convertDMS2Decimal()">转换为十进制</button>
+                    <button class="action-btn secondary" onclick="addToMap('dms')">添加到地图</button>
+                </div>
+
+                <div class="section">
+                    <div class="section-title">十进制 → 度分秒</div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>经度 (十进制)</label>
+                            <input type="number" id="decimalLon" step="0.000001" placeholder="例如: 116.407396">
+                        </div>
+                        <div class="form-group">
+                            <label>纬度 (十进制)</label>
+                            <input type="number" id="decimalLat" step="0.000001" placeholder="例如: 39.904211">
+                        </div>
+                    </div>
+                    <button class="action-btn" onclick="convertDecimal2DMS()">转换为度分秒</button>
+                    <button class="action-btn secondary" onclick="addToMap('decimal')">添加到地图</button>
+                </div>
+                <div id="dmsResult"></div>
+            </div>
+
+            <!-- XY和经纬度互转 -->
+            <div id="xy" class="tab-content">
+                <div class="section">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>坐标系统</label>
+                            <select id="projectionSystem">
+                                <option value="cgcs2000-3">CGCS2000 3度分带</option>
+                                <option value="cgcs2000-6">CGCS2000 6度分带</option>
+                                <option value="wgs84-utm">WGS84（高斯，非UTM）</option>
+                                <option value="beijing54-3">北京54 3度分带</option>
+                                <option value="beijing54-6">北京54 6度分带</option>
+                                <option value="xian80-3">西安80 3度分带</option>
+                                <option value="xian80-6">西安80 6度分带</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>中央经线/带号</label>
+                            <input type="number" id="centralMeridian" placeholder="例如: 117 或带号 39" value="117">
+                            <div class="hint">3度带: 中央经线 = 带号×3°，6度带: 中央经线 = 带号×6°-3°</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="section">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Y坐标形式（东向）</label>
+                            <select id="yFormat">
+                                <option value="auto" selected>自动识别（推荐）</option>
+                                <option value="offset">仅加500000假东：Y = y + 500000</option>
+                                <option value="zone">带号×100万 + 500000：Y = 带号*1000000 + (y + 500000)</option>
+                            </select>
+                            <div class="hint">用于XY→经纬度反算时正确扣除假东与带号。若你的数据来源明确，建议手动选择以避免误判。</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-title">XY坐标 → 经纬度</div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>X坐标 (北向, 米)</label>
+                            <input type="number" id="xCoord" step="0.001" placeholder="例如: 4418980.123">
+                        </div>
+                        <div class="form-group">
+                            <label>Y坐标 (东向, 米)</label>
+                            <input type="number" id="yCoord" step="0.001" placeholder="例如: 39512345.678">
+                        </div>
+                    </div>
+                    <button class="action-btn" onclick="convertXY2LatLon()">转换为经纬度</button>
+                    <button class="action-btn secondary" onclick="addToMap('xy')">添加到地图</button>
+                </div>
+
+                <div class="section">
+                    <div class="section-title">经纬度 → XY坐标</div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>经度 (十进制)</label>
+                            <input type="number" id="lonForXY" step="0.000001" placeholder="例如: 116.407396">
+                        </div>
+                        <div class="form-group">
+                            <label>纬度 (十进制)</label>
+                            <input type="number" id="latForXY" step="0.000001" placeholder="例如: 39.904211">
+                        </div>
+                    </div>
+                    <button class="action-btn" onclick="convertLatLon2XY()">转换为XY坐标</button>
+                    <button class="action-btn secondary" onclick="addToMap('latlon')">添加到地图</button>
+                </div>
+                <div id="xyResult"></div>
+            </div>
+
+            <!-- 批量转换 -->
+            <div id="batch" class="tab-content">
+                <div class="section">
+                    <div class="form-group">
+                        <label>转换类型</label>
+                        <select id="batchType" onchange="updateBatchExample()">
+                            <option value="dms2decimal">度分秒 → 十进制</option>
+                            <option value="decimal2dms">十进制 → 度分秒</option>
+                            <option value="xy2ll">XY坐标 → 经纬度</option>
+                            <option value="ll2xy">经纬度 → XY坐标</option>
+                        </select>
+                    </div>
+
+                    <div id="batchProjectionSettings" style="display: none;">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>坐标系统</label>
+                                <select id="batchProjection">
+                                    <option value="cgcs2000-3">CGCS2000 3度分带</option>
+                                    <option value="cgcs2000-6">CGCS2000 6度分带</option>
+                                    <option value="wgs84-utm">WGS84（高斯，非UTM）</option>
+                                    <option value="beijing54-3">北京54 3度分带</option>
+                                    <option value="beijing54-6">北京54 6度分带</option>
+                                    <option value="xian80-3">西安80 3度分带</option>
+                                    <option value="xian80-6">西安80 6度分带</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>中央经线/带号</label>
+                                <input type="number" id="batchCentralMeridian" value="117">
+                            </div>
+                        </div>
+                    </div>
+                            <div class="form-group">
+                                <label>Y坐标形式（东向）</label>
+                                <select id="batchYFormat">
+                                    <option value="auto" selected>自动识别（推荐）</option>
+                                    <option value="offset">仅加500000假东</option>
+                                    <option value="zone">带号×100万 + 500000</option>
+                                </select>
+                            </div>
+
+                    <div class="form-group">
+                        <label>输入数据（每行一个坐标点）</label>
+                        <textarea id="batchInput" placeholder="粘贴数据..."></textarea>
+                    </div>
+
+                    <div class="example" id="batchExample"></div>
+
+                    <button class="action-btn" onclick="convertBatch()">批量转换</button>
+                    <button class="action-btn secondary" onclick="copyBatchResult()">复制结果</button>
+                    <button class="action-btn secondary" onclick="exportToExcel()">导出Excel</button>
+                    <button class="action-btn secondary" onclick="exportToCSV()">导出CSV</button>
+                    <button class="action-btn secondary" onclick="clearBatch()">清空</button>
+                    <button class="action-btn secondary" onclick="loadBatchExample()">加载示例</button>
+                    <button class="action-btn secondary" onclick="addBatchToMap()">添加到地图</button>
+                </div>
+                <div id="batchResult"></div>
+            </div>
+
+            <!-- 地图可视化 -->
+            <div id="map-tab" class="tab-content">
+                <div class="section">
+                    <div class="section-title">地图显示</div>
+                    <div style="position: relative;">
+                        <div id="map"></div>
+                    </div>
+                    <div class="map-controls">
+                        <button class="action-btn" onclick="clearAllMarkers()">清除所有标记</button>
+                        <button class="action-btn secondary" onclick="exportMarkers()">导出标记点</button>
+                        <button class="action-btn secondary" onclick="fitMapToBounds()">适应视图</button>
+                        <div class="marker-list" id="markerList"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 设置 -->
+            <div id="settings" class="tab-content">
+                <div class="section">
+                    <div class="section-title">显示精度设置</div>
+                    <div class="settings-panel">
+                        <div class="form-row quad">
+                            <div class="form-group">
+                                <label>经纬度小数位数</label>
+                                <input type="number" id="coordPrecision" min="1" max="10" value="6">
+                            </div>
+                            <div class="form-group">
+                                <label>XY坐标小数位数</label>
+                                <input type="number" id="xyPrecision" min="1" max="6" value="3">
+                            </div>
+                            <div class="form-group">
+                                <label>角度秒小数位数</label>
+                                <input type="number" id="dmsPrecision" min="1" max="6" value="2">
+                            </div>
+                            <div class="form-group">
+                                <label>距离小数位数</label>
+                                <input type="number" id="distPrecision" min="1" max="6" value="2">
+                            </div>
+                        </div>
+                        <button class="action-btn" onclick="savePrecisionSettings()">保存设置</button>
+                        <button class="action-btn secondary" onclick="resetPrecisionSettings()">恢复默认</button>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-title">地图设置</div>
+                    <div class="settings-panel">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>默认地图中心经度</label>
+                                <input type="number" id="defaultMapLon" step="0.000001" value="116.407396">
+                            </div>
+                            <div class="form-group">
+                                <label>默认地图中心纬度</label>
+                                <input type="number" id="defaultMapLat" step="0.000001" value="39.904211">
+                            </div>
+                            <div class="form-group">
+                                <label>默认缩放级别</label>
+                                <input type="number" id="defaultMapZoom" min="1" max="18" value="10">
+                            </div>
+                        </div>
+                        <button class="action-btn" onclick="saveMapSettings()">保存设置</button>
+                        <button class="action-btn secondary" onclick="resetMapSettings()">恢复默认</button>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-title">关于</div>
+                    <div class="settings-panel">
+                        <p style="margin-bottom: 10px; color: #666; font-size: 14px;">
+                            坐标转换工具 v2.5
+                        </p>
+                        <p style="color: #999; font-size: 13px; line-height: 1.8;">
+                            支持功能：<br>
+                            • 度分秒与十进制经纬度互转<br>
+                            • 平面坐标(XY)与经纬度互转<br>
+                            • 支持CGCS2000、WGS84、北京54、西安80等坐标系<br>
+                            • 批量坐标转换<br>
+                            • 地图可视化显示（CartoDB、OSM、ArcGIS等）<br>
+                            • 数据导出（Excel、CSV格式）
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <div class="footer-content">
+                <span class="footer-org">河北省地质调查院</span>
+                <span style="margin: 0 8px; color: #ddd;">·</span>
+                <span class="footer-author">苑浩</span>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <!-- 移除了 OTP 库的引用 -->
+    
+    <script>
+        // ============= 业务逻辑层 =============
+        
+        let map = null;
+        let markers = [];
+        let markerCounter = 0;
+        let currentBaseLayer = null;
+        let baseLayers = {};
+        
+        let precision = {
+            coord: 6,
+            xy: 3,
+            dms: 2,
+            dist: 2
+        };
+
+        // 初始化函数
+        function initToolLogic() {
+            updateBatchExample();
+            loadSettings();
+            // 确保 Tab 正确显示
+            showTab('dms'); 
+        }
+
+        // --- 核心工具函数 ---
+
+        function loadSettings() {
+            const saved = localStorage.getItem('coordToolSettings');
+            if (saved) {
+                const settings = JSON.parse(saved);
+                precision = settings.precision || precision;
+                
+                if(document.getElementById('coordPrecision')) {
+                    document.getElementById('coordPrecision').value = precision.coord;
+                    document.getElementById('xyPrecision').value = precision.xy;
+                    document.getElementById('dmsPrecision').value = precision.dms;
+                    document.getElementById('distPrecision').value = precision.dist;
+                }
+                
+                if (settings.map && document.getElementById('defaultMapLon')) {
+                    document.getElementById('defaultMapLon').value = settings.map.lon;
+                    document.getElementById('defaultMapLat').value = settings.map.lat;
+                    document.getElementById('defaultMapZoom').value = settings.map.zoom;
+                }
+            }
+        }
+
+        function initMap() {
+            if (map) return;
+            const mapSettings = getMapSettings();
+            map = L.map('map').setView([mapSettings.lat, mapSettings.lon], mapSettings.zoom);
+            
+             baseLayers['CartoDB浅色'] = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', {
+                attribution: '© CartoDB', subdomains: 'abcd', maxZoom: 19
+            });
+
+            baseLayers['OSM街道'] = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors', maxZoom: 18
+            });
+
+            baseLayers['ArcGIS卫星'] = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                attribution: 'Tiles © Esri', maxZoom: 18
+            });
+
+            baseLayers['OpenTopo地形'] = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenTopoMap contributors', maxZoom: 17
+            });
+
+            currentBaseLayer = baseLayers['CartoDB浅色'];
+            currentBaseLayer.addTo(map);
+
+            L.control.layers(baseLayers, null, { position: 'topright', collapsed: false }).addTo(map);
+            
+            map.on('click', function(e) {
+                addMarkerToMap(e.latlng.lat, e.latlng.lng, '点击添加', { source: '地图点击' });
+            });
+        }
+
+        function getMapSettings() {
+            const saved = localStorage.getItem('coordToolSettings');
+            if (saved) {
+                const settings = JSON.parse(saved);
+                if (settings.map) return settings.map;
+            }
+            return { lon: 116.407396, lat: 39.904211, zoom: 10 };
+        }
+
+        function showTab(tabName) {
+            const tabs = document.querySelectorAll('.tab');
+            const contents = document.querySelectorAll('.tab-content');
+            
+            tabs.forEach(tab => tab.classList.remove('active'));
+            contents.forEach(content => content.classList.remove('active'));
+            
+            // 找到对应的 button
+            const clickedBtn = Array.from(tabs).find(t => t.getAttribute('onclick').includes(tabName));
+            if(clickedBtn) clickedBtn.classList.add('active');
+            
+            if (tabName === 'map') {
+                document.getElementById('map-tab').classList.add('active');
+                setTimeout(() => {
+                    initMap();
+                    map.invalidateSize();
+                }, 100);
+            } else {
+                const target = document.getElementById(tabName);
+                if (target) target.classList.add('active');
+            }
+        }
+
+        // --- 转换逻辑 ---
+
+        function dmsToDecimal(degrees, minutes, seconds) {
+            // 兼容西经/南纬（负号只放在度上时）
+            const sign = degrees < 0 ? -1 : 1;
+            return sign * (Math.abs(degrees) + (minutes || 0) / 60 + (seconds || 0) / 3600);
+        }
+
+        function decimalToDMS(decimal) {
+            const degrees = Math.floor(Math.abs(decimal));
+            const minutesDecimal = (Math.abs(decimal) - degrees) * 60;
+            const minutes = Math.floor(minutesDecimal);
+            const seconds = (minutesDecimal - minutes) * 60;
+            return { degrees: decimal < 0 ? -degrees : degrees, minutes: minutes, seconds: seconds };
+        }
+
+        function convertDMS2Decimal() {
+            const lonDeg = parseFloat(document.getElementById('lonDeg').value) || 0;
+            const lonMin = parseFloat(document.getElementById('lonMin').value) || 0;
+            const lonSec = parseFloat(document.getElementById('lonSec').value) || 0;
+            const latDeg = parseFloat(document.getElementById('latDeg').value) || 0;
+            const latMin = parseFloat(document.getElementById('latMin').value) || 0;
+            const latSec = parseFloat(document.getElementById('latSec').value) || 0;
+
+            const lon = dmsToDecimal(lonDeg, lonMin, lonSec);
+            const lat = dmsToDecimal(latDeg, latMin, latSec);
+
+            window.lastConvertedCoord = { lon, lat };
+
+            document.getElementById('dmsResult').innerHTML = `
+                <div class="result">
+                    <div class="result-title">转换结果</div>
+                    <div class="result-item"><span class="result-label">经度:</span><span class="result-value">${lon.toFixed(precision.coord)}°</span></div>
+                    <div class="result-item"><span class="result-label">纬度:</span><span class="result-value">${lat.toFixed(precision.coord)}°</span></div>
+                </div>`;
+        }
+
+        function convertDecimal2DMS() {
+            const lon = parseFloat(document.getElementById('decimalLon').value);
+            const lat = parseFloat(document.getElementById('decimalLat').value);
+            if (isNaN(lon) || isNaN(lat)) { alert('请输入有效的经纬度'); return; }
+
+            window.lastConvertedCoord = { lon, lat };
+            const lonDMS = decimalToDMS(lon);
+            const latDMS = decimalToDMS(lat);
+
+            document.getElementById('dmsResult').innerHTML = `
+                <div class="result">
+                    <div class="result-title">转换结果</div>
+                    <div class="result-item"><span class="result-label">经度:</span><span class="result-value">${lonDMS.degrees}°${lonDMS.minutes}′${lonDMS.seconds.toFixed(precision.dms)}″</span></div>
+                    <div class="result-item"><span class="result-label">纬度:</span><span class="result-value">${latDMS.degrees}°${latDMS.minutes}′${latDMS.seconds.toFixed(precision.dms)}″</span></div>
+                </div>`;
+        }
+
+        // --- 高斯投影逻辑 ---
+        
+        const ELLIPSOIDS = {
+            'CGCS2000': { a: 6378137.0, f: 1/298.257222101 },
+            'WGS84': { a: 6378137.0, f: 1/298.257223563 },
+            'Beijing54': { a: 6378245.0, f: 1/298.3 },
+            'Xian80': { a: 6378140.0, f: 1/298.257 }
+        };
+
+        function getEllipsoid(projection) {
+            if (projection.includes('cgcs2000')) return ELLIPSOIDS.CGCS2000;
+            if (projection.includes('beijing54')) return ELLIPSOIDS.Beijing54;
+            if (projection.includes('xian80')) return ELLIPSOIDS.Xian80;
+            return ELLIPSOIDS.WGS84;
+        } // 修复了这里缺少的右大括号
+
+        // 解析Y坐标：根据数据形式扣除带号与假东
+        function parseYCoord(y, format) {
+            const yy = Number(y);
+            if (!isFinite(yy)) return NaN;
+            if (format === 'offset') {
+                // 仅假东 500000
+                return yy - 500000;
+            }
+            if (format === 'zone') {
+                // 带号*1000000 + (y + 500000)
+                const within = (yy % 1000000);
+                return within - 500000;
+            }
+            // auto: 尽量兼容常见两种写法
+            // 如果看起来包含带号（>1,000,000），优先按带号处理，否则按仅假东处理
+            return yy > 1000000 ? (yy % 1000000) - 500000 : yy - 500000;
+        }
+
+        function gaussProjection(lon, lat, centralMeridian, ellipsoid) {
+            const { a, f } = ellipsoid;
+            const e2 = 2 * f - f * f;
+            const e2_ = e2 / (1 - e2);
+            const latRad = lat * Math.PI / 180;
+            const lonRad = lon * Math.PI / 180;
+            const l = lonRad - centralMeridian * Math.PI / 180;
+            const N = a / Math.sqrt(1 - e2 * Math.sin(latRad) ** 2);
+            const t = Math.tan(latRad);
+            const η2 = e2_ * Math.cos(latRad) ** 2;
+            const cosLat = Math.cos(latRad);
+            const A0 = 1 + 3/4 * e2 + 45/64 * e2**2 + 175/256 * e2**3;
+            const A2 = 3/4 * e2 + 15/16 * e2**2 + 525/512 * e2**3;
+            const A4 = 15/64 * e2**2 + 105/256 * e2**3;
+            const A6 = 35/512 * e2**3;
+            const X = a * (1 - e2) * (A0 * latRad - A2/2 * Math.sin(2*latRad) + A4/4 * Math.sin(4*latRad) - A6/6 * Math.sin(6*latRad));
+            const x = X + N * t * cosLat**2 * l**2 / 2 + N * t * cosLat**4 * (5 - t**2 + 9*η2 + 4*η2**2) * l**4 / 24 + N * t * cosLat**6 * (61 - 58*t**2 + t**4) * l**6 / 720;
+            const y = N * cosLat * l + N * cosLat**3 * (1 - t**2 + η2) * l**3 / 6 + N * cosLat**5 * (5 - 18*t**2 + t**4 + 14*η2 - 58*η2*t**2) * l**5 / 120;
+            return { x, y };
+        }
+
+        function gaussInverseProjection(x, y, centralMeridian, ellipsoid) {
+            const { a, f } = ellipsoid;
+            const e2 = 2 * f - f * f;
+            const e2_ = e2 / (1 - e2);
+            const Bf = x / (a * (1 - e2) * (1 + 3/4 * e2 + 45/64 * e2**2 + 175/256 * e2**3));
+            let B = Bf;
+            for (let i = 0; i < 5; i++) {
+                const A2 = 3/4 * e2 + 15/16 * e2**2 + 525/512 * e2**3;
+                const A4 = 15/64 * e2**2 + 105/256 * e2**3;
+                const A6 = 35/512 * e2**3;
+                B = Bf + (A2/2 * Math.sin(2*B) - A4/4 * Math.sin(4*B) + A6/6 * Math.sin(6*B));
+            }
+            const Nf = a / Math.sqrt(1 - e2 * Math.sin(B) ** 2);
+            const tf = Math.tan(B);
+            const η2f = e2_ * Math.cos(B) ** 2;
+            const lat = B - tf / (2 * Nf**2 / (a * (1-e2))) * y**2 / 2 + tf / (24 * Nf**4 / (a * (1-e2))**3) * (5 + 3*tf**2 + η2f - 9*η2f*tf**2) * y**4 / 24 - tf / (720 * Nf**6 / (a * (1-e2))**5) * (61 + 90*tf**2 + 45*tf**4) * y**6 / 720;
+            const l = y / (Nf * Math.cos(B)) - (1 + 2*tf**2 + η2f) * y**3 / (6 * Nf**3 * Math.cos(B)) + (5 + 28*tf**2 + 24*tf**4) * y**5 / (120 * Nf**5 * Math.cos(B));
+            const lon = centralMeridian + l * 180 / Math.PI;
+            const latDeg = lat * 180 / Math.PI;
+            return { lon, lat: latDeg };
+        }
+
+        function convertXY2LatLon() {
+            const x = parseFloat(document.getElementById('xCoord').value);
+            const y = parseFloat(document.getElementById('yCoord').value);
+            const cm = parseFloat(document.getElementById('centralMeridian').value);
+            const projection = document.getElementById('projectionSystem').value;
+            if (isNaN(x) || isNaN(y) || isNaN(cm)) { alert('请输入有效的坐标值'); return; }
+            const ellipsoid = getEllipsoid(projection);
+            const yFormat = (document.getElementById('yFormat') && document.getElementById('yFormat').value) || 'auto';
+            let actualY = parseYCoord(y, yFormat);
+            const result = gaussInverseProjection(x, actualY, cm, ellipsoid);
+            window.lastConvertedCoord = { lon: result.lon, lat: result.lat };
+            document.getElementById('xyResult').innerHTML = `<div class="result"><div class="result-title">转换结果</div><div class="result-item"><span class="result-label">经度:</span><span class="result-value">${result.lon.toFixed(precision.coord)}°</span></div><div class="result-item"><span class="result-label">纬度:</span><span class="result-value">${result.lat.toFixed(precision.coord)}°</span></div></div>`;
+        }
+
+        function convertLatLon2XY() {
+            const lon = parseFloat(document.getElementById('lonForXY').value);
+            const lat = parseFloat(document.getElementById('latForXY').value);
+            const cm = parseFloat(document.getElementById('centralMeridian').value);
+            const projection = document.getElementById('projectionSystem').value;
+            if (isNaN(lon) || isNaN(lat) || isNaN(cm)) { alert('请输入有效的经纬度'); return; }
+            window.lastConvertedCoord = { lon, lat };
+            const ellipsoid = getEllipsoid(projection);
+            const result = gaussProjection(lon, lat, cm, ellipsoid);
+            const yWithOffset = result.y + 500000;
+            const zoneNumber = projection.includes('-3') ? Math.floor(cm / 3) : Math.floor((cm + 3) / 6);
+            const yWithZone = zoneNumber * 1000000 + yWithOffset;
+            document.getElementById('xyResult').innerHTML = `<div class="result"><div class="result-title">转换结果</div><div class="result-item"><span class="result-label">X坐标:</span><span class="result-value">${result.x.toFixed(precision.xy)} 米</span></div><div class="result-item"><span class="result-label">Y坐标:</span><span class="result-value">${yWithOffset.toFixed(precision.xy)} 米</span></div><div class="result-item"><span class="result-label">带号+Y:</span><span class="result-value">${yWithZone.toFixed(precision.xy)} 米</span></div></div>`;
+        }
+
+        // --- 批量处理逻辑 ---
+
+        function updateBatchExample() {
+            const type = document.getElementById('batchType').value;
+            const exampleDiv = document.getElementById('batchExample');
+            const projSettings = document.getElementById('batchProjectionSettings');
+            let exampleText = '';
+            
+            if (type === 'dms2decimal') {
+                projSettings.style.display = 'none';
+                exampleText = `支持格式示例：\n116°24′26.63″ 39°54′15.16″\n点A: 116°24'26.63" 39°54'15.16"\n116 24 26.63, 39 54 15.16`;
+            } else if (type === 'decimal2dms') {
+                projSettings.style.display = 'none';
+                exampleText = `支持格式示例：\n116.407396, 39.904211\n点A: 116.407396 39.904211`;
+            } else if (type === 'xy2ll') {
+                projSettings.style.display = 'block';
+                exampleText = `支持格式示例：\n4418980.123, 39512345.678\n点A: 4418980.123 39512345.678\nX=4418980.123 Y=39512345.678`;
+            } else if (type === 'll2xy') {
+                projSettings.style.display = 'block';
+                exampleText = `支持格式示例：\n116.407396, 39.904211\n点A: 116.407396 39.904211`;
+            }
+            exampleDiv.innerHTML = `<div class="example-title">支持的输入格式</div><pre>${exampleText}</pre>`;
+        }
+
+        // 解析函数
+        function parseDMSCoordinates(text) {
+            const lines = text.split('\n');
+            const results = [];
+            const errors = [];
+            lines.forEach((line, index) => {
+                line = line.trim();
+                if (!line) return;
+                const numbers = line.match(/-?\d+\.?\d*/g);
+                if (numbers && numbers.length >= 6) {
+                    const [lonDeg, lonMin, lonSec, latDeg, latMin, latSec] = numbers.map(parseFloat);
+                    if (![lonDeg, lonMin, lonSec, latDeg, latMin, latSec].some(isNaN)) {
+                        results.push({ lon: { deg: lonDeg, min: lonMin, sec: lonSec }, lat: { deg: latDeg, min: latMin, sec: latSec }, lineNum: index + 1 });
+                    } else { errors.push({ line, lineNum: index + 1, reason: '数字格式错误' }); }
+                } else { errors.push({ line, lineNum: index + 1, reason: `需要6个数字` }); }
+            });
+            return { results, errors };
+        }
+
+        function parseDecimalCoordinates(text) {
+            const lines = text.split('\n');
+            const results = [];
+            const errors = [];
+            lines.forEach((line, index) => {
+                line = line.trim();
+                if (!line) return;
+                const numbers = line.match(/-?\d+\.?\d*/g);
+                if (numbers && numbers.length >= 2) {
+                    const [lon, lat] = numbers.map(parseFloat);
+                    if (!isNaN(lon) && !isNaN(lat)) {
+                        results.push({ lon, lat, lineNum: index + 1 });
+                    } else { errors.push({ line, lineNum: index + 1, reason: '数字格式错误' }); }
+                } else { errors.push({ line, lineNum: index + 1, reason: `需要2个数字` }); }
+            });
+            return { results, errors };
+        }
+
+        function parseXYCoordinates(text) {
+            const lines = text.split('\n');
+            const results = [];
+            const errors = [];
+            lines.forEach((line, index) => {
+                line = line.trim();
+                if (!line) return;
+                const numbers = line.match(/-?\d+\.?\d*/g);
+                if (numbers && numbers.length >= 2) {
+                    const [x, y] = numbers.map(parseFloat);
+                    if (!isNaN(x) && !isNaN(y)) {
+                        results.push({ x, y, lineNum: index + 1 });
+                    } else { errors.push({ line, lineNum: index + 1, reason: '数字格式错误' }); }
+                } else { errors.push({ line, lineNum: index + 1, reason: `需要2个数字` }); }
+            });
+            return { results, errors };
+        }
+
+        function convertBatch() {
+            const input = document.getElementById('batchInput').value;
+            const type = document.getElementById('batchType').value;
+            if (!input.trim()) { alert('请输入数据'); return; }
+
+            let html = '';
+            let convertedResults = [];
+            let convertedCoords = [];
+            let { results, errors } = { results: [], errors: [] };
+
+            if (type === 'dms2decimal') {
+                ({ results, errors } = parseDMSCoordinates(input));
+                if (results.length === 0) { document.getElementById('batchResult').innerHTML = `<div class="status status-error">未能解析任何有效数据</div>`; return; }
+                html += `<div class="status status-success">成功解析 ${results.length} 个坐标</div><div class="result"><div class="result-title">转换结果</div>`;
+                results.forEach((point, index) => {
+                    const lon = dmsToDecimal(point.lon.deg, point.lon.min, point.lon.sec);
+                    const lat = dmsToDecimal(point.lat.deg, point.lat.min, point.lat.sec);
+                    html += `<div class="result-item"><span class="result-label">点 ${index + 1}:</span><span class="result-value">${lon.toFixed(precision.coord)}, ${lat.toFixed(precision.coord)}</span></div>`;
+                    convertedResults.push(`${lon.toFixed(precision.coord)}, ${lat.toFixed(precision.coord)}`);
+                    convertedCoords.push({ lon, lat, name: `点${index + 1}` });
+                });
+                html += '</div>';
+
+            } else if (type === 'decimal2dms') {
+                ({ results, errors } = parseDecimalCoordinates(input));
+                if (results.length === 0) { document.getElementById('batchResult').innerHTML = `<div class="status status-error">未能解析任何有效数据</div>`; return; }
+                html += `<div class="status status-success">成功解析 ${results.length} 个坐标</div><div class="result"><div class="result-title">转换结果</div>`;
+                results.forEach((point, index) => {
+                    const lon = decimalToDMS(point.lon);
+                    const lat = decimalToDMS(point.lat);
+                    const lonStr = `${lon.degrees}°${lon.minutes}′${lon.seconds.toFixed(precision.dms)}″`;
+                    const latStr = `${lat.degrees}°${lat.minutes}′${lat.seconds.toFixed(precision.dms)}″`;
+                    html += `<div class="result-item"><span class="result-label">点 ${index + 1}:</span><span class="result-value">${lonStr}, ${latStr}</span></div>`;
+                    convertedResults.push(`${lonStr}, ${latStr}`);
+                    convertedCoords.push({ lon: point.lon, lat: point.lat, name: `点${index + 1}` });
+                });
+                html += '</div>';
+
+            } else if (type === 'xy2ll') {
+                ({ results, errors } = parseXYCoordinates(input));
+                if (results.length === 0) { document.getElementById('batchResult').innerHTML = `<div class="status status-error">未能解析任何有效数据</div>`; return; }
+                const cm = parseFloat(document.getElementById('batchCentralMeridian').value);
+                const projection = document.getElementById('batchProjection').value;
+                const ellipsoid = getEllipsoid(projection);
+                html += `<div class="status status-success">成功解析 ${results.length} 个坐标</div><div class="result"><div class="result-title">转换结果</div>`;
+                results.forEach((point, index) => {
+                    const yFormat = (document.getElementById('batchYFormat') && document.getElementById('batchYFormat').value) || 'auto';
+                    let actualY = parseYCoord(point.y, yFormat);
+                    const result = gaussInverseProjection(point.x, actualY, cm, ellipsoid);
+                    html += `<div class="result-item"><span class="result-label">点 ${index + 1}:</span><span class="result-value">${result.lon.toFixed(precision.coord)}, ${result.lat.toFixed(precision.coord)}</span></div>`;
+                    convertedResults.push(`${result.lon.toFixed(precision.coord)}, ${result.lat.toFixed(precision.coord)}`);
+                    convertedCoords.push({ lon: result.lon, lat: result.lat, name: `点${index + 1}` });
+                });
+                html += '</div>';
+
+            } else if (type === 'll2xy') {
+                ({ results, errors } = parseDecimalCoordinates(input));
+                if (results.length === 0) { document.getElementById('batchResult').innerHTML = `<div class="status status-error">未能解析任何有效数据</div>`; return; }
+                const cm = parseFloat(document.getElementById('batchCentralMeridian').value);
+                const projection = document.getElementById('batchProjection').value;
+                const ellipsoid = getEllipsoid(projection);
+                html += `<div class="status status-success">成功解析 ${results.length} 个坐标</div><div class="result"><div class="result-title">转换结果</div>`;
+                results.forEach((point, index) => {
+                    const result = gaussProjection(point.lon, point.lat, cm, ellipsoid);
+                    const yWithOffset = result.y + 500000;
+                    html += `<div class="result-item"><span class="result-label">点 ${index + 1}:</span><span class="result-value">${result.x.toFixed(precision.xy)}, ${yWithOffset.toFixed(precision.xy)}</span></div>`;
+                    convertedResults.push(`${result.x.toFixed(precision.xy)}, ${yWithOffset.toFixed(precision.xy)}`);
+                    convertedCoords.push({ lon: point.lon, lat: point.lat, name: `点${index + 1}` });
+                });
+                html += '</div>';
+            }
+
+            if (errors.length > 0) { html += `<div class="status status-warning">有 ${errors.length} 行无法解析</div>`; }
+            document.getElementById('batchResult').innerHTML = html;
+            window.batchConvertedResults = convertedResults;
+            window.batchConvertedCoords = convertedCoords;
+        }
+
+        function copyBatchResult() {
+            if (!window.batchConvertedResults || window.batchConvertedResults.length === 0) { alert('请先进行批量转换'); return; }
+            navigator.clipboard.writeText(window.batchConvertedResults.join('\n')).then(() => alert('已复制')).catch(() => alert('复制失败'));
+        }
+
+        function clearBatch() {
+            document.getElementById('batchInput').value = '';
+            document.getElementById('batchResult').innerHTML = '';
+            window.batchConvertedResults = [];
+            window.batchConvertedCoords = [];
+        }
+
+        function loadBatchExample() {
+            const type = document.getElementById('batchType').value;
+            let example = '';
+            if (type === 'dms2decimal') example = `116°24′26.63″ 39°54′15.16″\n点A: 116°24'26.63" 39°54'15.16"`;
+            else if (type === 'decimal2dms') example = `116.407396, 39.904211\n点A: 121.491806 31.237533`;
+            else if (type === 'xy2ll') example = `4418980.123, 39512345.678`;
+            else if (type === 'll2xy') example = `116.407396, 39.904211`;
+            document.getElementById('batchInput').value = example;
+        }
+
+        function exportToExcel() {
+            if (!window.batchConvertedResults || window.batchConvertedResults.length === 0) { alert('请先进行批量转换'); return; }
+            const type = document.getElementById('batchType').value;
+            let headers, data;
+            if (type === 'dms2decimal' || type === 'xy2ll') headers = ['序号', '经度', '纬度'];
+            else if (type === 'decimal2dms') headers = ['序号', '经度(度分秒)', '纬度(度分秒)'];
+            else if (type === 'll2xy') headers = ['序号', 'X坐标', 'Y坐标'];
+            
+            data = window.batchConvertedResults.map((result, index) => {
+                const parts = result.split(',');
+                return [index + 1, parts[0].trim(), parts[1].trim()];
+            });
+            const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, '转换结果');
+            XLSX.writeFile(wb, `坐标转换结果_${new Date().toISOString().slice(0,10)}.xlsx`);
+        }
+
+        function exportToCSV() {
+            if (!window.batchConvertedResults || window.batchConvertedResults.length === 0) { alert('请先进行批量转换'); return; }
+            // 简化CSV导出逻辑，使用与Excel相同的数据源
+            let content = window.batchConvertedResults.map((r, i) => `${i+1},${r}`).join('\n');
+            const blob = new Blob(['\ufeff序号,数据1,数据2\n' + content], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `坐标转换结果.csv`;
+            link.click();
+        }
+
+        // --- 地图与标记逻辑 ---
+        
+        function addMarkerToMap(lat, lon, name, meta = {}) {
+            if (!map) initMap();
+            markerCounter++;
+            const markerName = name || `标记点 ${markerCounter}`;
+            const marker = L.marker([lat, lon]).addTo(map);
+            const metaHtml = meta && meta.source ? `<br><span style="color:#666;font-size:12px;">来源: ${meta.source}</span>` : '';
+            marker.bindPopup(`<b>${markerName}</b><br>经度: ${lon.toFixed(precision.coord)}°<br>纬度: ${lat.toFixed(precision.coord)}°${metaHtml}`);
+            markers.push({ id: markerCounter, marker: marker, lat: lat, lon: lon, name: markerName, meta: meta || {} });
+            updateMarkerList();
+            return marker;
+        }
+
+        function addToMap(source) {
+            if (!window.lastConvertedCoord) { alert('请先进行坐标转换'); return; }
+            const { lon, lat } = window.lastConvertedCoord;
+            const nameMap = { dms: '度分秒点', decimal: '十进制点', xy: 'XY反算点', latlon: '经纬度正算点' };
+            addMarkerToMap(lat, lon, nameMap[source] || '坐标点', { source });
+            showTab('map');
+            setTimeout(() => map.setView([lat, lon], 13), 200);
+        }
+
+        function addBatchToMap() {
+            if (!window.batchConvertedCoords || window.batchConvertedCoords.length === 0) { alert('请先进行批量转换'); return; }
+            window.batchConvertedCoords.forEach(c => addMarkerToMap(c.lat, c.lon, c.name, { source: '批量转换' }));
+            showTab('map');
+            setTimeout(() => fitMapToBounds(), 200);
+        }
+
+        function updateMarkerList() {
+            const listDiv = document.getElementById('markerList');
+            if (!listDiv) return;
+            if (markers.length === 0) {
+                listDiv.innerHTML = '<p style="color: #999; text-align: center; padding: 20px;">暂无标记点</p>';
+                return;
+            }
+            let html = '';
+            markers.forEach((m, index) => {
+                const srcTag = (m.meta && m.meta.source) ? ` <span style="margin-left:8px;color:#999;font-size:12px;">(${m.meta.source})</span>` : '';
+                html += `<div class="marker-item">
+                    <div class="marker-info">
+                        <strong>${m.name}</strong>${srcTag}<br>
+                        <span style="color: #666; font-size: 12px;">经度: ${m.lon.toFixed(precision.coord)} | 纬度: ${m.lat.toFixed(precision.coord)}</span>
+                    </div>
+                    <div class="marker-actions">
+                        <button class="secondary" onclick="flyToMarker(${index})">定位</button>
+                        <button class="secondary" onclick="removeMarker(${index})">删除</button>
+                    </div>
+                </div>`;
+            });
+            listDiv.innerHTML = html;
+        }
+
+        function flyToMarker(index) { if (markers[index]) { map.setView([markers[index].lat, markers[index].lon], 15); markers[index].marker.openPopup(); } }
+        function removeMarker(index) { if (markers[index]) { map.removeLayer(markers[index].marker); markers.splice(index, 1); updateMarkerList(); } }
+        function clearAllMarkers() { if (confirm('确定要清除所有标记点吗？')) { markers.forEach(m => map.removeLayer(m.marker)); markers = []; updateMarkerList(); } }
+        
+        function fitMapToBounds() {
+            if (markers.length === 0) { alert('地图上没有标记点'); return; }
+            const bounds = L.latLngBounds(markers.map(m => [m.lat, m.lon]));
+            map.fitBounds(bounds, { padding: [50, 50] });
+        }
+
+        function exportMarkers() {
+            if (markers.length === 0) { alert('地图上没有标记点'); return; }
+            const headers = ['名称', '经度', '纬度', '来源'];
+            const data = markers.map(m => [m.name, m.lon.toFixed(precision.coord), m.lat.toFixed(precision.coord), (m.meta && m.meta.source) ? m.meta.source : '']);
+            const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, '标记点');
+            XLSX.writeFile(wb, `地图标记点.xlsx`);
+        }
+
+        function savePrecisionSettings() {
+            precision.coord = parseInt(document.getElementById('coordPrecision').value);
+            precision.xy = parseInt(document.getElementById('xyPrecision').value);
+            precision.dms = parseInt(document.getElementById('dmsPrecision').value);
+            precision.dist = parseInt(document.getElementById('distPrecision').value);
+            const settings = JSON.parse(localStorage.getItem('coordToolSettings') || '{}');
+            settings.precision = precision;
+            localStorage.setItem('coordToolSettings', JSON.stringify(settings));
+            alert('精度设置已保存');
+        }
+
+        function resetPrecisionSettings() {
+            precision = { coord: 6, xy: 3, dms: 2, dist: 2 };
+            document.getElementById('coordPrecision').value = 6;
+            document.getElementById('xyPrecision').value = 3;
+            document.getElementById('dmsPrecision').value = 2;
+            document.getElementById('distPrecision').value = 2;
+            const settings = JSON.parse(localStorage.getItem('coordToolSettings') || '{}');
+            settings.precision = precision;
+            localStorage.setItem('coordToolSettings', JSON.stringify(settings));
+            alert('已恢复默认精度设置');
+        }
+
+        function saveMapSettings() {
+            const mapSettings = {
+                lon: parseFloat(document.getElementById('defaultMapLon').value),
+                lat: parseFloat(document.getElementById('defaultMapLat').value),
+                zoom: parseInt(document.getElementById('defaultMapZoom').value)
+            };
+            const settings = JSON.parse(localStorage.getItem('coordToolSettings') || '{}');
+            settings.map = mapSettings;
+            localStorage.setItem('coordToolSettings', JSON.stringify(settings));
+            alert('地图设置已保存');
+        }
+
+        function resetMapSettings() {
+            document.getElementById('defaultMapLon').value = 116.407396;
+            document.getElementById('defaultMapLat').value = 39.904211;
+            document.getElementById('defaultMapZoom').value = 10;
+            const settings = JSON.parse(localStorage.getItem('coordToolSettings') || '{}');
+            settings.map = { lon: 116.407396, lat: 39.904211, zoom: 10 };
+            localStorage.setItem('coordToolSettings', JSON.stringify(settings));
+            alert('已恢复默认地图设置');
+        }
+
+        // 页面加载完成后自动初始化
+        window.addEventListener('DOMContentLoaded', initToolLogic);
+
+    </script>
+</body>
+</html>
